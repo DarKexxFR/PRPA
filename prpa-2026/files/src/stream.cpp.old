@@ -1,0 +1,138 @@
+#include "Image.hpp"
+#include "Detection.hpp"
+#include "JobQueue.hpp"
+#include "SDL.h"
+
+#include <OpenImageIO/imageio.h>
+#include <fmt/core.h>
+
+#include <functional>
+
+
+using namespace std::chrono_literals;
+
+extern int ImageCount;
+extern const char* ImagePath;
+std::vector<Image<rgb8>> inputs;
+
+void load_images()
+{
+  for (int i = 1; i <= ImageCount; ++i)
+  {
+    auto in = OIIO::ImageInput::open(fmt::format("{}/camera-{:03}.jpg", ImagePath, i));
+    if (!in)
+    {
+      fmt::print("Unable to read files\n");
+      std::exit(1);
+    }
+    const auto& spec = in->spec();
+    Image<rgb8> out(spec.width, spec.height);
+    in->read_image (OIIO::TypeDesc::UINT8, out.buffer);
+    inputs.push_back(std::move(out));
+  }
+}
+
+
+void produce(std::stop_token token, JobQueue& jobs, int fps, long& frame_sent)
+{
+  int i = 0;
+  long frame_count = 0;
+  while (!token.stop_requested())
+  {
+    jobs.enqueue(inputs[i].clone());
+    i = (i + 1) % ImageCount;
+    frame_count++;
+    std::this_thread::sleep_for(1000ms / fps);
+  }
+
+  frame_sent = frame_count;
+}
+
+
+void consume(std::stop_token token, JobQueue& jobs, std::function<void(ImageView<rgb8>)> detection_fn, long& frame_processed)
+{
+
+  int         win_width  = 640;
+  int         win_height = 480;
+  SDL_Window* pWindow    = SDL_CreateWindow("Viewer",                //
+                                         SDL_WINDOWPOS_UNDEFINED, //
+                                         SDL_WINDOWPOS_UNDEFINED, //
+                                         win_width, win_height, SDL_WINDOW_SHOWN);
+  auto        wsurface   = SDL_GetWindowSurface(pWindow);
+
+
+  long frame_count = 0;
+  while (!token.stop_requested() || !jobs.empty())
+  {
+    auto q = jobs.dequeue();
+    if (q)
+    {
+      auto& input = q.value();
+
+
+      detection_fn(input);
+
+
+      // Let'say the real process lasts 100ms
+      std::this_thread::sleep_for(10ms);
+
+      SDL_Surface* surf =
+        SDL_CreateRGBSurfaceWithFormatFrom(input.buffer, input.width, input.height, 24, input.stride, SDL_PIXELFORMAT_RGB24);
+
+      SDL_BlitSurface(surf, NULL, wsurface, NULL);
+      SDL_FreeSurface(surf);
+
+      SDL_UpdateWindowSurface(pWindow);
+
+      // Show the ouput
+      frame_count++;
+    }
+  }
+  SDL_DestroyWindow(pWindow);
+  frame_processed = frame_count;
+}
+
+int main()
+{
+  load_images();
+
+  // Init SDL
+  if(SDL_Init(SDL_INIT_VIDEO) < 0)
+  {
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "[debug] %s", SDL_GetError());
+    return -1;
+  }
+
+
+
+  int  BUFFER_SIZE = 80;
+  int  FPS_SENDER  = 25;
+  long frame_sent;
+  long frame_processed;
+  auto duration = 10s;
+
+  Detection context;
+  context.set_background(inputs.back());
+
+  {
+    auto start = std::chrono::steady_clock::now();
+    {
+      JobQueue     jobs(BUFFER_SIZE);
+      std::jthread t2(consume, std::ref(jobs), std::bind(&Detection::st, context, std::placeholders::_1), std::ref(frame_processed));
+      std::jthread t1(produce, std::ref(jobs), FPS_SENDER, std::ref(frame_sent));
+
+      std::this_thread::sleep_for(duration);
+    }
+    auto end = std::chrono::steady_clock::now();
+    duration = std::chrono::duration_cast<std::chrono::seconds>(end - start);
+  }
+
+  fmt::print("Consumer has been running for {}s.\n", duration.count());
+  fmt::print("Number of frame sent: {}; framerate={:02}fps\n", frame_sent, FPS_SENDER);
+  fmt::print("Number of frame processed: {} (ratio={:.02}%); framerate={:.02}fps\n", frame_processed,
+             frame_processed / float(frame_sent),
+             frame_processed / float(duration.count()));
+
+
+  SDL_Quit();
+}

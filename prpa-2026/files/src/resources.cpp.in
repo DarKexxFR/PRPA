@@ -1,0 +1,9 @@
+
+const char* ImagePath = {
+  "@RESOURCES_DIR@" "/images"
+};
+
+
+
+
+

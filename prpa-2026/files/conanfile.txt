@@ -1,0 +1,11 @@
+[requires]
+fmt/[>=10.0,<11]
+onetbb/[>=2021.0]    # Comment if you do not need TBB
+benchmark/[>=1.6]
+
+[generators]
+CMakeDeps
+CMakeToolchain
+
+[options]
+
