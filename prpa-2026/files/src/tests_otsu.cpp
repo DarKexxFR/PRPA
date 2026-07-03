@@ -1,5 +1,3 @@
-// Correctness check: the 3 versions of Otsu must produce the same output
-
 #include "Otsu.hpp"
 
 #include <algorithm>
@@ -17,10 +15,9 @@ static Image<rgb8> make_test_image(int width, int height)
     rgb8* lineptr = (rgb8*)((std::byte*)img.buffer + y * img.stride);
     for (int x = 0; x < width; ++x)
     {
-      // Two populations (dark / bright) + noise: a good case for Otsu
-      int base    = (x / 64 + y / 64) % 2 ? 200 : 40;
-      int noise   = (int)(gen() % 41) - 20;
-      int v       = std::clamp(base + noise, 0, 255);
+      int base   = (x / 64 + y / 64) % 2 ? 200 : 40;
+      int noise  = (int)(gen() % 41) - 20;
+      int v      = std::clamp(base + noise, 0, 255);
       lineptr[x] = {(uint8_t)v, (uint8_t)(gen() % 256), (uint8_t)(gen() % 256)};
     }
   }
@@ -50,15 +47,15 @@ int main()
   auto mt = input.clone();
   otsu_mt(mt);
 
-  int  n_white = 0;
+  int n_white = 0;
   for (int y = 0; y < ref.height; ++y)
   {
     rgb8* lineptr = (rgb8*)((std::byte*)ref.buffer + y * ref.stride);
     for (int x = 0; x < ref.width; ++x)
       n_white += lineptr[x].r == 255;
   }
-  std::printf("white pixels: %d / %d (%.1f%%)\n", n_white,
-              ref.width * ref.height, 100.f * n_white / (ref.width * ref.height));
+  std::printf("white pixels: %d / %d (%.1f%%)\n", n_white, ref.width * ref.height,
+              100.f * n_white / (ref.width * ref.height));
 
   bool ok_st = same(ref, st);
   bool ok_mt = same(ref, mt);

@@ -1,4 +1,3 @@
-// Quick timing of PrioritySetV1 vs PrioritySet (no google-benchmark needed)
 #include "PrioritySet.hpp"
 
 #include <chrono>
@@ -21,10 +20,18 @@ static double mixed(int n_threads, int n_ops)
         int v = gen() & ((1 << 24) - 1);
         switch (j % 4)
         {
-        case 0: s.insert(v); break;
-        case 1: s.remove(v); break;
-        case 2: (void)s.has(v); break;
-        case 3: (void)s.get_min(); break;
+        case 0:
+          s.insert(v);
+          break;
+        case 1:
+          s.remove(v);
+          break;
+        case 2:
+          (void)s.has(v);
+          break;
+        case 3:
+          (void)s.get_min();
+          break;
         }
       }
     });

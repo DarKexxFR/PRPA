@@ -1,6 +1,3 @@
-// Test scenarios for the PrioritySet (part 2 of the subject)
-// Build with -fsanitize=thread (Debug) to catch data races.
-
 #include "PrioritySet.hpp"
 
 #include <algorithm>
@@ -13,25 +10,23 @@
 
 static int n_failed = 0;
 
-// TSan slows execution down ~10x: lighten the stress tests
 #ifdef __SANITIZE_THREAD__
 static constexpr int STRESS = 10;
 #else
 static constexpr int STRESS = 1;
 #endif
 
-#define CHECK(cond)                                                            \
-  do                                                                           \
-  {                                                                            \
-    if (!(cond))                                                               \
-    {                                                                          \
-      std::printf("  FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);            \
-      n_failed++;                                                              \
-    }                                                                          \
+#define CHECK(cond)                                                                                                    \
+  do                                                                                                                   \
+  {                                                                                                                    \
+    if (!(cond))                                                                                                       \
+    {                                                                                                                  \
+      std::printf("  FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);                                                    \
+      n_failed++;                                                                                                      \
+    }                                                                                                                  \
   } while (0)
 
 
-// Sanity check, single thread
 template <class Set>
 void test_sequential()
 {
@@ -58,8 +53,6 @@ void test_sequential()
   CHECK(!s.remove(42)); // already removed
 }
 
-// Scenario from the subject: 10 concurrent insertions of 0..9,
-// the 10 elements must all be present at the end
 template <class Set>
 void test_concurrent_inserts()
 {
@@ -75,11 +68,6 @@ void test_concurrent_inserts()
   CHECK(s.get_min() == 0);
 }
 
-// Scenario from the subject: k threads do n += insert(99),
-// k threads do n -= remove(99). After execution:
-//   n >= 0
-//   n >= k  => has(99) == true   (impossible here since n <= k)
-//   n == 0  => has(99) == false
 template <class Set>
 void test_insert_remove_conflict()
 {
@@ -114,7 +102,6 @@ void test_insert_remove_conflict()
   }
 }
 
-// Each thread inserts its own range of values, everything must be there
 template <class Set>
 void test_disjoint_inserts()
 {
@@ -138,8 +125,6 @@ void test_disjoint_inserts()
   CHECK(s.get_min() == 0);
 }
 
-// k threads pop concurrently: each value must be popped exactly once
-// (no duplicate, no loss)
 template <class Set>
 void test_concurrent_pop_min()
 {
@@ -172,16 +157,14 @@ void test_concurrent_pop_min()
     total += popped[i].size();
     all.insert(popped[i].begin(), popped[i].end());
 
-    // per-thread: pop_min must return increasing values
     bool sorted = std::is_sorted(popped[i].begin(), popped[i].end());
     CHECK(sorted);
   }
-  CHECK(total == n_values);     // no duplicate pop
-  CHECK(all.size() == n_values); // no lost value
+  CHECK(total == n_values);
+  CHECK(all.size() == n_values);
   CHECK(s.get_min() == -1);
 }
 
-// Producers push increasing values while consumers pop_min (PES-like usage)
 template <class Set>
 void test_producer_consumer()
 {

@@ -2,12 +2,8 @@
 
 #include <bit>
 
-//
-// Version 1: flat atomic bitset
-//
-
 PrioritySetV1::PrioritySetV1()
-    : m_bits(NWORDS)
+  : m_bits(NWORDS)
 {
   for (auto& w : m_bits)
     w.store(0, std::memory_order_relaxed);
@@ -46,8 +42,6 @@ int PrioritySetV1::get_min() const
 
 int PrioritySetV1::pop_min()
 {
-  // get_min then remove: if another thread stole the value in-between,
-  // remove fails and we retry
   while (true)
   {
     int m = get_min();
@@ -58,10 +52,6 @@ int PrioritySetV1::pop_min()
   }
 }
 
-
-//
-// Version 2: hierarchical atomic bitset (k = 6, 4 levels)
-//
 
 PrioritySet::PrioritySet()
 {
@@ -77,14 +67,12 @@ PrioritySet::PrioritySet()
 
 bool PrioritySet::insert(int value)
 {
-  // Set the leaf bit first (the leaf level is the source of truth)
   uint64_t mask = uint64_t(1) << (value & 63);
   uint64_t old  = m_bits[NLEVELS - 1][value >> 6].fetch_or(mask);
 
   if (old & mask)
-    return false; // already present
+    return false;
 
-  // Publish in the summary levels, bottom-up
   int idx = value >> 6;
   for (int l = NLEVELS - 2; l >= 0; --l)
   {
@@ -92,7 +80,7 @@ bool PrioritySet::insert(int value)
     idx >>= 6;
     uint64_t prev = m_bits[l][idx].fetch_or(bit);
     if (prev & bit)
-      break; // the upper levels are already set
+      break;
   }
   return true;
 }
@@ -103,16 +91,13 @@ bool PrioritySet::remove(int value)
   uint64_t old  = m_bits[NLEVELS - 1][value >> 6].fetch_and(~mask);
 
   if (!(old & mask))
-    return false; // was absent
+    return false;
 
-  // If we emptied the word, clear the summary bit... but a concurrent
-  // insert may set a bit in the word right after our check. So after
-  // clearing the summary bit we re-check the word and undo if needed.
   int idx = value >> 6;
   for (int l = NLEVELS - 2; l >= 0; --l)
   {
     if (m_bits[l + 1][idx].load() != 0)
-      break; // word still in use, summaries must stay set
+      break;
 
     uint64_t bit = uint64_t(1) << (idx & 63);
     int      up  = idx >> 6;
@@ -120,7 +105,6 @@ bool PrioritySet::remove(int value)
 
     if (m_bits[l + 1][idx].load() != 0)
     {
-      // a concurrent insert refilled the word: undo
       m_bits[l][up].fetch_or(bit);
       break;
     }
@@ -137,9 +121,6 @@ bool PrioritySet::has(int value) const
 
 int PrioritySet::get_min() const
 {
-  // Walk down the hierarchy following the lowest set bit.
-  // Summary bits are only hints: if we reach an empty word (concurrent
-  // remove), we restart from the root.
   while (true)
   {
     int  idx   = 0;
@@ -151,8 +132,8 @@ int PrioritySet::get_min() const
       if (word == 0)
       {
         if (l == 0)
-          return -1; // the set is really empty
-        stale = true; // stale hint, retry
+          return -1;
+        stale = true;
         break;
       }
       idx = idx * 64 + std::countr_zero(word);
@@ -170,7 +151,7 @@ int PrioritySet::pop_min()
     int m = get_min();
     if (m == -1)
       return -1;
-    if (remove(m)) // fails if another thread popped it first
+    if (remove(m))
       return m;
   }
 }

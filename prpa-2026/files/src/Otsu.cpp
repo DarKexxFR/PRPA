@@ -1,10 +1,7 @@
 #include "Otsu.hpp"
 
-#include <cstring>
 #include <oneapi/tbb.h>
 
-// Compute the otsu threshold from a 256-bins histogram (naive version)
-// For each candidate threshold we re-scan the whole histogram.
 static int otsu_threshold_naive(const int hist[256], int total)
 {
   double best_var  = 0.0;
@@ -17,12 +14,12 @@ static int otsu_threshold_naive(const int hist[256], int total)
 
     for (int i = 0; i <= t; ++i)
     {
-      w0   += hist[i];
+      w0 += hist[i];
       sum0 += i * hist[i];
     }
     for (int i = t + 1; i < 256; ++i)
     {
-      w1   += hist[i];
+      w1 += hist[i];
       sum1 += i * hist[i];
     }
 
@@ -42,7 +39,6 @@ static int otsu_threshold_naive(const int hist[256], int total)
   return threshold;
 }
 
-// Same result but O(256): the sums are computed incrementally
 static int otsu_threshold(const int hist[256], int total)
 {
   long sum_all = 0;
@@ -55,7 +51,7 @@ static int otsu_threshold(const int hist[256], int total)
 
   for (int t = 0; t < 256; ++t)
   {
-    w0   += hist[t];
+    w0 += hist[t];
     sum0 += (long)t * hist[t];
     long w1 = total - w0;
 
@@ -75,12 +71,11 @@ static int otsu_threshold(const int hist[256], int total)
   return threshold;
 }
 
-// Single threaded, naive baseline implementation
+// Single threaded version (naive impl)
 void otsu_baseline(ImageView<rgb8> in)
 {
   int hist[256] = {0};
 
-  // 1. Grayscale histogram (float math, gray recomputed later)
   for (int y = 0; y < in.height; ++y)
   {
     rgb8* lineptr = (rgb8*)((std::byte*)in.buffer + y * in.stride);
@@ -91,10 +86,8 @@ void otsu_baseline(ImageView<rgb8> in)
     }
   }
 
-  // 2. Find the threshold that maximizes the inter-class variance
   int t = otsu_threshold_naive(hist, in.width * in.height);
 
-  // 3. Binarize (gray is recomputed a second time)
   for (int y = 0; y < in.height; ++y)
   {
     rgb8* lineptr = (rgb8*)((std::byte*)in.buffer + y * in.stride);
@@ -109,10 +102,6 @@ void otsu_baseline(ImageView<rgb8> in)
 
 
 // Single threaded - Optimized version of the Method
-// - integer arithmetic only
-// - the gray value is cached in the red channel during the first pass
-//   (halves the memory traffic of the second pass + vectorizable loops)
-// - O(256) incremental threshold computation
 void otsu_st(ImageView<rgb8> in)
 {
   int hist[256] = {0};
@@ -122,8 +111,8 @@ void otsu_st(ImageView<rgb8> in)
     rgb8* lineptr = (rgb8*)((std::byte*)in.buffer + y * in.stride);
     for (int x = 0; x < in.width; ++x)
     {
-      int gray      = (lineptr[x].r + lineptr[x].g + lineptr[x].b) / 3;
-      lineptr[x].r  = (uint8_t)gray; // cache it for the 2nd pass
+      int gray     = (lineptr[x].r + lineptr[x].g + lineptr[x].b) / 3;
+      lineptr[x].r = (uint8_t)gray;
       hist[gray]++;
     }
   }
@@ -142,8 +131,6 @@ void otsu_st(ImageView<rgb8> in)
 }
 
 
-// Map + Reduction pattern: each body computes a local histogram on its
-// sub-range (and caches the gray value), histograms are merged in join()
 class HistogramComputer
 {
 public:
@@ -184,7 +171,6 @@ public:
   }
 };
 
-// Element-wise pattern: pixels are independent
 class BinarizeApplier
 {
 public:
@@ -219,10 +205,7 @@ void otsu_mt(ImageView<rgb8> in)
 
   int t = otsu_threshold(histo.hist, in.width * in.height);
 
-  BinarizeApplier algo = {
-    .in        = in,
-    .threshold = t
-  };
+  BinarizeApplier algo = {.in = in, .threshold = t};
   tbb::parallel_for(rng, algo);
 }
 
@@ -254,6 +237,4 @@ void otsu(uint8_t* buffer, int width, int height, int stride)
     }
   }
 }
-
-
 }

@@ -1,7 +1,3 @@
-// Lightweight benchmark of the 3 Otsu versions (no external dependency).
-// The real benchmark (Google Benchmark) is in bench.cpp; this one is
-// handy when the conan dependencies are not installed.
-
 #include "Otsu.hpp"
 
 #include <algorithm>
